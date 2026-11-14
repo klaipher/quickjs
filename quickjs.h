@@ -1449,6 +1449,17 @@ JS_EXTERN int JS_SetPropertyFunctionList(JSContext *ctx, JSValueConst obj,
                                           const JSCFunctionListEntry *tab,
                                           int len);
 
+/* Telegram fork change 3 (VENDOR.md): host auto-init properties. A property defined with
+   JS_DefineHostAutoInitProperty reads as an ordinary data property. Its value is made by the runtime's host
+   auto-init function the first time the property is read or described. Deleting it first drops it without making
+   it. The function must not define or remove any property of `obj`, and must not read the property being made
+   (JS_GetProperty of `prop` on `obj` re-enters the build and corrupts memory). Reading other properties of `obj`
+   is fine. */
+typedef JSValue JSHostAutoInitFunc(JSContext *ctx, JSValueConst obj, JSAtom prop, void *opaque);
+JS_EXTERN void JS_SetHostAutoInitFunc(JSRuntime *rt, JSHostAutoInitFunc *func);
+JS_EXTERN int JS_DefineHostAutoInitProperty(JSContext *ctx, JSValueConst obj, JSAtom prop, void *opaque,
+                                            int flags);
+
 /* C module definition */
 
 typedef int JSModuleInitFunc(JSContext *ctx, JSModuleDef *m);

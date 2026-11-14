@@ -422,6 +422,7 @@ struct JSRuntime {
     struct JSStackFrame *current_stack_frame;
 
     JSInterruptHandler *interrupt_handler;
+    JSHostAutoInitFunc *host_autoinit_func; /* Telegram fork change 3 */
     void *interrupt_opaque;
 
     JSPromiseHook *promise_hook;
@@ -585,6 +586,7 @@ typedef enum {
     JS_AUTOINIT_ID_MODULE_NS,
     JS_AUTOINIT_ID_PROP,
     JS_AUTOINIT_ID_BYTECODE,
+    JS_AUTOINIT_ID_HOST, /* Telegram fork change 3 */
 } JSAutoInitIDEnum;
 
 enum {
@@ -1140,7 +1142,7 @@ typedef struct JSProperty {
             /* in order to use only 2 pointers, we compress the realm
                and the init function pointer */
             uintptr_t realm_and_id; /* realm and init_id (JS_AUTOINIT_ID_x)
-                                       in the 2 low bits */
+                                       in the 3 low bits */
             void *opaque;
         } init;
     } u;
@@ -7014,12 +7016,12 @@ JSValue JS_NewCFunctionData(JSContext *ctx, JSCFunctionData *func,
 
 static JSContext *js_autoinit_get_realm(JSProperty *pr)
 {
-    return (JSContext *)(pr->u.init.realm_and_id & ~3);
+    return (JSContext *)(pr->u.init.realm_and_id & ~(uintptr_t)7);
 }
 
 static JSAutoInitIDEnum js_autoinit_get_id(JSProperty *pr)
 {
-    return pr->u.init.realm_and_id & 3;
+    return pr->u.init.realm_and_id & 7;
 }
 
 static void js_autoinit_free(JSRuntime *rt, JSProperty *pr)
@@ -9523,11 +9525,21 @@ static JSValue js_bytecode_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
 /* return the value associated to the autoinit property or an exception */
 typedef JSValue JSAutoInitFunc(JSContext *ctx, JSObject *p, JSAtom atom, void *opaque);
 
+/* Telegram fork change 3 */
+static JSValue js_host_autoinit(JSContext *ctx, JSObject *p, JSAtom atom, void *opaque)
+{
+    JSHostAutoInitFunc *func = ctx->rt->host_autoinit_func;
+    if (!func)
+        return JS_UNDEFINED;
+    return func(ctx, JS_MKPTR(JS_TAG_OBJECT, p), atom, opaque);
+}
+
 static JSAutoInitFunc *const js_autoinit_func_table[] = {
     js_instantiate_prototype, /* JS_AUTOINIT_ID_PROTOTYPE */
     js_module_ns_autoinit, /* JS_AUTOINIT_ID_MODULE_NS */
     JS_InstantiateFunctionListItem2, /* JS_AUTOINIT_ID_PROP */
     js_bytecode_autoinit, /* JS_AUTOINIT_ID_BYTECODE */
+    js_host_autoinit, /* JS_AUTOINIT_ID_HOST, Telegram fork change 3 */
 };
 
 /* warning: 'prs' is reallocated after it */
@@ -11972,11 +11984,22 @@ static int JS_DefineAutoInitProperty(JSContext *ctx, JSValueConst this_obj,
     if (unlikely(!pr))
         return -1;
     pr->u.init.realm_and_id = (uintptr_t)JS_DupContext(ctx);
-    assert((pr->u.init.realm_and_id & 3) == 0);
-    assert(id <= 3);
+    assert((pr->u.init.realm_and_id & 7) == 0);
+    assert(id <= JS_AUTOINIT_ID_HOST);
     pr->u.init.realm_and_id |= id;
     pr->u.init.opaque = opaque;
     return true;
+}
+
+/* Telegram fork change 3 */
+void JS_SetHostAutoInitFunc(JSRuntime *rt, JSHostAutoInitFunc *func)
+{
+    rt->host_autoinit_func = func;
+}
+
+int JS_DefineHostAutoInitProperty(JSContext *ctx, JSValueConst obj, JSAtom prop, void *opaque, int flags)
+{
+    return JS_DefineAutoInitProperty(ctx, obj, prop, JS_AUTOINIT_ID_HOST, opaque, flags);
 }
 
 /* Like JS_DefinePropertyValue but borrows val (does not free it) */
