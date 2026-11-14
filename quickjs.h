@@ -581,6 +581,14 @@ JS_EXTERN void JS_SetRandomSeed(JSContext *ctx, uint64_t seed);
    or call into QuickJS. NULL, the default, removes it. */
 typedef void JSMemoryLimitFunc(JSRuntime *rt, void *opaque);
 JS_EXTERN void JS_SetMemoryLimitFunc(JSRuntime *rt, JSMemoryLimitFunc *func, void *opaque);
+
+/* Telegram fork change 10 (VENDOR.md): the host's stop. From this call on, no exception can be caught in the runtime,
+   whatever was thrown (bare null, which QuickJS throws when it cannot build an error, included): a catch or finally
+   never runs for it, an async function, a promise reaction or a Promise executor propagates it instead of rejecting
+   with it, and a disposal (DisposableStack, `using`) ends at the first disposer that throws. The call makes every
+   context's next poll throw the uncatchable "interrupted" error at once, and every poll after it. It cannot be undone. It allocates nothing, so a host may call it from its interrupt handler or its
+   memory-limit hook. JS_IsUncatchableError, which sees only a value, still answers for the value alone. */
+JS_EXTERN void JS_SetStopped(JSRuntime *rt);
 JS_EXTERN JSValue JS_GetFunctionProto(JSContext *ctx);
 
 /* the following functions are used to select the intrinsic object to

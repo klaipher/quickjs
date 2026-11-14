@@ -429,6 +429,7 @@ struct JSRuntime {
     void *wall_clock_opaque;
     JSMemoryLimitFunc *memory_limit_func; /* Telegram fork change 9: NULL for none */
     void *memory_limit_opaque;
+    bool stopped; /* Telegram fork change 10: set by JS_SetStopped, never cleared */
     void *interrupt_opaque;
 
     JSPromiseHook *promise_hook;
@@ -3280,6 +3281,15 @@ void JS_SetMemoryLimitFunc(JSRuntime *rt, JSMemoryLimitFunc *func, void *opaque)
 {
     rt->memory_limit_func = func;
     rt->memory_limit_opaque = opaque;
+}
+
+/* Telegram fork change 10 (VENDOR.md): the host's stop. It is the runtime's uncatchable state (uncatchable_pending: no
+   catch, finally, reaction, executor or disposer takes an exception, every context's next poll throws "interrupted"
+   at once) held for good: js_clear_uncatchable_pending does nothing once stopped is set. Allocates nothing. */
+void JS_SetStopped(JSRuntime *rt)
+{
+    rt->stopped = true;
+    js_set_uncatchable_pending(rt);
 }
 
 JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id)
@@ -8517,7 +8527,8 @@ static void js_clear_uncatchable_pending(JSRuntime *rt)
 {
     struct list_head *el;
 
-    if (!rt->uncatchable_pending)
+    /* Telegram fork change 10: a stopped runtime never gets over it */
+    if (rt->stopped || !rt->uncatchable_pending)
         return;
     rt->uncatchable_pending = false;
     list_for_each(el, &rt->context_list) {
