@@ -5855,6 +5855,78 @@ static JSValue JS_ConcatString(JSContext *ctx, JSValue op1, JSValue op2)
     return js_new_string_rope(ctx, op1, op2);
 }
 
+/* Telegram fork change 5 (VENDOR.md): string access for the DOM. Placed here because it needs
+   string_rope_get_len and JS_ConcatString, defined above. */
+uint32_t JS_GetStringLength(JSValueConst v)
+{
+    switch (JS_VALUE_GET_TAG(v)) {
+    case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
+        return string_rope_get_len(v);
+    default:
+        return 0;
+    }
+}
+
+JSValue JS_FlattenString(JSContext *ctx, JSValueConst v)
+{
+    StringBuffer b_s, *b = &b_s;
+    if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING)
+        return js_dup(v);
+    if (JS_VALUE_GET_TAG(v) != JS_TAG_STRING_ROPE)
+        return JS_ThrowTypeError(ctx, "not a string");
+    if (string_buffer_init(ctx, b, string_rope_get_len(v)))
+        return JS_EXCEPTION;
+    if (string_buffer_concat_value(b, v)) {
+        string_buffer_free(b);
+        return JS_EXCEPTION;
+    }
+    return string_buffer_end(b);
+}
+
+bool JS_GetStringView(JSValueConst v, JSStringView *view)
+{
+    JSString *p;
+    if (JS_VALUE_GET_TAG(v) != JS_TAG_STRING)
+        return false;
+    p = JS_VALUE_GET_STRING(v);
+    view->length = p->len;
+    if (p->is_wide_char) {
+        view->latin1 = NULL;
+        view->utf16 = str16(p);
+    } else {
+        view->latin1 = str8(p);
+        view->utf16 = NULL;
+    }
+    return true;
+}
+
+JSValue JS_SubString(JSContext *ctx, JSValueConst v, uint32_t start, uint32_t end)
+{
+    JSValue flat = JS_FlattenString(ctx, v);
+    JSString *p;
+    JSValue r;
+    if (JS_IsException(flat))
+        return flat;
+    p = JS_VALUE_GET_STRING(flat);
+    if (end > p->len)
+        end = p->len;
+    if (start >= end) {
+        JS_FreeValue(ctx, flat);
+        return js_empty_string(ctx->rt);
+    }
+    r = js_sub_string(ctx, p, start, end);
+    JS_FreeValue(ctx, flat);
+    return r;
+}
+
+JSValue JS_ConcatStrings2(JSContext *ctx, JSValueConst a, JSValueConst b)
+{
+    /* JS_ConcatString consumes both; the dups also keep its in-place append (refcount 1 only) off the caller's
+       strings */
+    return JS_ConcatString(ctx, js_dup(a), js_dup(b));
+}
+
 /* Shape support */
 
 static inline size_t get_shape_size(size_t hash_size, size_t prop_size)

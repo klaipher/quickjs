@@ -916,6 +916,30 @@ static inline JSValue JS_NewString(JSContext *ctx, const char *str) {
 // that is the responsibility of the caller
 JS_EXTERN JSValue JS_NewStringUTF16(JSContext *ctx, const uint16_t *buf,
                                     size_t len);
+/* Telegram fork change 5 (VENDOR.md): string access for the DOM, which keeps its strings as QuickJS strings.
+   All lengths and offsets are in UTF-16 code units. A "flat" string has tag JS_TAG_STRING; a rope
+   (JS_TAG_STRING_ROPE, what + and concat build) is a tree of flat strings. */
+typedef struct JSStringView {
+    const uint8_t *latin1;  /* set for an 8-bit string: one byte per code unit */
+    const uint16_t *utf16;  /* set for a 16-bit string; exactly one of the two is set */
+    uint32_t length;        /* in UTF-16 code units */
+} JSStringView;
+/* Length of a flat string or a rope; 0 for anything else. Cannot fail. */
+JS_EXTERN uint32_t JS_GetStringLength(JSValueConst v);
+/* A flat string with the contents of v, as a NEW reference the caller frees. A flat string is returned as is
+   (duplicated); a rope is concatenated into one buffer (may fail with out of memory); anything else throws
+   TypeError and returns JS_EXCEPTION. */
+JS_EXTERN JSValue JS_FlattenString(JSContext *ctx, JSValueConst v);
+/* Fills *view with v's characters, without copying, and returns true when v is a flat string. Returns false
+   (leaving *view untouched) for a rope or a non-string; flatten a rope first. The pointers are valid only while
+   the value v is alive (hold a reference) and must not be written through. */
+JS_EXTERN bool JS_GetStringView(JSValueConst v, JSStringView *view);
+/* Characters [start, end) of v as a NEW reference. Clamped to the string; start >= end gives "". A rope is
+   flattened first; a non-string throws TypeError and returns JS_EXCEPTION. */
+JS_EXTERN JSValue JS_SubString(JSContext *ctx, JSValueConst v, uint32_t start, uint32_t end);
+/* a + b as a NEW reference; neither argument is consumed or modified. Both must be strings or ropes
+   (a non-string is converted with ToString first, as the + operator does). The result may be a rope. */
+JS_EXTERN JSValue JS_ConcatStrings2(JSContext *ctx, JSValueConst a, JSValueConst b);
 JS_EXTERN JSValue JS_NewAtomString(JSContext *ctx, const char *str);
 JS_EXTERN JSValue JS_ToString(JSContext *ctx, JSValueConst val);
 JS_EXTERN JSValue JS_ToPropertyKey(JSContext *ctx, JSValueConst val);
