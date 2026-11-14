@@ -424,6 +424,7 @@ struct JSRuntime {
     JSInterruptHandler *interrupt_handler;
     JSHostAutoInitFunc *host_autoinit_func; /* Telegram fork change 3 */
     JSClassProtoInitFunc *class_proto_init_func; /* Telegram fork change 4 */
+    JSClassID global_object_class_id; /* Telegram fork change 6: 0 for a plain global object */
     void *interrupt_opaque;
 
     JSPromiseHook *promise_hook;
@@ -3219,6 +3220,14 @@ static JSValue js_class_proto(JSContext *ctx, JSClassID class_id)
 void JS_SetClassProtoInitFunc(JSRuntime *rt, JSClassProtoInitFunc *func)
 {
     rt->class_proto_init_func = func;
+}
+
+/* Telegram fork change 6 (VENDOR.md). */
+void JS_SetGlobalObjectClass(JSRuntime *rt, JSClassID class_id)
+{
+    if (class_id != 0 && (class_id < JS_CLASS_INIT_COUNT || !JS_IsRegisteredClass(rt, class_id)))
+        abort();
+    rt->global_object_class_id = class_id;
 }
 
 JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id)
@@ -59921,8 +59930,11 @@ static int JS_AddIntrinsicBasicObjects(JSContext *ctx)
         return -1;
     ctx->class_proto[JS_CLASS_BYTECODE_FUNCTION] = js_dup(ctx->function_proto);
 
+    /* Telegram fork change 6: the runtime's host class for the global object, when it set one. Every intrinsic
+       installer below only defines properties on ctx->global_obj, which does not depend on its class. */
     ctx->global_obj = JS_NewObjectProtoClassAlloc(ctx, ctx->class_proto[JS_CLASS_OBJECT],
-                                                  JS_CLASS_OBJECT, 64);
+                                                  ctx->rt->global_object_class_id ? ctx->rt->global_object_class_id : JS_CLASS_OBJECT,
+                                                  64);
     if (JS_IsException(ctx->global_obj))
         return -1;
     ctx->global_var_obj = JS_NewObjectProtoClassAlloc(ctx, JS_NULL,

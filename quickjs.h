@@ -552,6 +552,13 @@ JS_EXTERN JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id);
    as the parent's, is the intended pattern. */
 typedef JSValue JSClassProtoInitFunc(JSContext *ctx, JSClassID class_id);
 JS_EXTERN void JS_SetClassProtoInitFunc(JSRuntime *rt, JSClassProtoInitFunc *func);
+
+/* Telegram fork change 6 (VENDOR.md): a host-class global object. Contexts created after this call get a global
+   object of class `class_id` (a class registered with JS_NewClass: it can carry an opaque payload, and the class's
+   gc_mark and finalizer run on it) instead of a plain object. The intrinsics install on it unchanged and its
+   [[Prototype]] is still Object.prototype; the host replaces it with JS_SetPrototype. 0 restores the default, a plain
+   object. A built-in or unregistered class aborts. */
+JS_EXTERN void JS_SetGlobalObjectClass(JSRuntime *rt, JSClassID class_id);
 JS_EXTERN JSValue JS_GetFunctionProto(JSContext *ctx);
 
 /* the following functions are used to select the intrinsic object to
