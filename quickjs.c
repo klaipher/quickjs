@@ -81,7 +81,10 @@
 #define __extension__
 #endif
 
-#if !defined(NDEBUG) && !defined(QJS_DISABLE_DUMPS)
+/* Telegram fork change 12 (VENDOR.md): upstream's `#ifndef NDEBUG` turned the dumps on in every build without NDEBUG,
+   and with them a list link in every string (JSString.link, JSRuntime.string_list): the memory limit's trip point
+   and the GC thresholds moved with the build configuration. Only an explicit opt-in turns them on. */
+#if defined(TELEGRAM_QJS_ENABLE_DUMPS) && !defined(QJS_DISABLE_DUMPS)
 #define ENABLE_DUMPS
 #endif
 
