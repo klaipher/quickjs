@@ -1330,6 +1330,7 @@ static JSAtom __JS_NewAtomInit(JSRuntime *rt, const char *str, int len,
                                int atom_type);
 static void JS_FreeAtomStruct(JSRuntime *rt, JSAtomStruct *p);
 static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b);
+static void js_set_uncatchable_pending(JSRuntime *rt);
 static JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
                                   JSValueConst this_obj,
                                   int argc, JSValueConst *argv, int flags);

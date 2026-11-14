@@ -5,6 +5,7 @@ Branch `nanogram`. Base: TelegramMessenger/quickjs `b526a817`. Newest first. Det
 
 ## Unreleased
 
+- Forward declaration of `js_set_uncatchable_pending` (used by `JS_SetStopped` before its static definition): clang treats the implicit declaration as non-static and stops with "static declaration follows non-static declaration" (found by the first Android build of 2026-11-14).
 - Records: this file.
 - Dumps only with `-DTELEGRAM_QJS_ENABLE_DUMPS`.
 - `JS_SetStopped`: after the host stops a script, nothing in it can catch the stop.
