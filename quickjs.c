@@ -425,6 +425,8 @@ struct JSRuntime {
     JSHostAutoInitFunc *host_autoinit_func; /* Telegram fork change 3 */
     JSClassProtoInitFunc *class_proto_init_func; /* Telegram fork change 4 */
     JSClassID global_object_class_id; /* Telegram fork change 6: 0 for a plain global object */
+    JSWallClockFunc *wall_clock_func; /* Telegram fork change 7: NULL for the system clock */
+    void *wall_clock_opaque;
     void *interrupt_opaque;
 
     JSPromiseHook *promise_hook;
@@ -3228,6 +3230,18 @@ void JS_SetGlobalObjectClass(JSRuntime *rt, JSClassID class_id)
     if (class_id != 0 && (class_id < JS_CLASS_INIT_COUNT || !JS_IsRegisteredClass(rt, class_id)))
         abort();
     rt->global_object_class_id = class_id;
+}
+
+/* Telegram fork change 7 (VENDOR.md). */
+void JS_SetWallClockFunc(JSRuntime *rt, JSWallClockFunc *func, void *opaque)
+{
+    rt->wall_clock_func = func;
+    rt->wall_clock_opaque = opaque;
+}
+
+void JS_SetRandomSeed(JSContext *ctx, uint64_t seed)
+{
+    ctx->random_state = seed ? seed : 1;
 }
 
 JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id)
@@ -58863,8 +58877,16 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
     return js_new_string8_len(ctx, buf, pos);
 }
 
-/* OS dependent: return the UTC time in ms since 1970. */
-static int64_t date_now(void) {
+/* OS dependent: return the UTC time in ms since 1970. Telegram fork change 7: the runtime's wall clock when it set
+   one. A time value is whole milliseconds; a host value that is not one reads as 0. */
+static int64_t date_now(JSContext *ctx) {
+    JSRuntime *rt = ctx->rt;
+    if (rt->wall_clock_func) {
+        double ms = rt->wall_clock_func(rt->wall_clock_opaque);
+        if (!isfinite(ms) || fabs(ms) > 8.64e15)
+            return 0;
+        return (int64_t)floor(ms);
+    }
     return js__gettimeofday_us() / 1000;
 }
 
@@ -58882,7 +58904,7 @@ static JSValue js_date_constructor(JSContext *ctx, JSValueConst new_target,
     }
     n = argc;
     if (n == 0) {
-        val = date_now();
+        val = date_now(ctx);
     } else if (n == 1) {
         JSValue v, dv;
         if (JS_VALUE_GET_TAG(argv[0]) == JS_TAG_OBJECT) {
@@ -59430,7 +59452,7 @@ static JSValue js_Date_now(JSContext *ctx, JSValueConst this_val,
                            int argc, JSValueConst *argv)
 {
     // now()
-    return js_int64(date_now());
+    return js_int64(date_now(ctx));
 }
 
 static JSValue js_date_Symbol_toPrimitive(JSContext *ctx, JSValueConst this_val,

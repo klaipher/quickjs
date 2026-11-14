@@ -559,6 +559,16 @@ JS_EXTERN void JS_SetClassProtoInitFunc(JSRuntime *rt, JSClassProtoInitFunc *fun
    [[Prototype]] is still Object.prototype; the host replaces it with JS_SetPrototype. 0 restores the default, a plain
    object. A built-in or unregistered class aborts. */
 JS_EXTERN void JS_SetGlobalObjectClass(JSRuntime *rt, JSClassID class_id);
+
+/* Telegram fork change 7 (VENDOR.md): host time and randomness, for a deterministic test mode.
+   - A wall clock function, when set, is what Date.now(), `new Date()` and Date() read (milliseconds since the epoch,
+     floored; a value that is not finite or is outside the time value range reads as 0) instead of the system clock.
+     NULL restores the system clock.
+   - JS_SetRandomSeed restarts a context's Math.random sequence from `seed`. Equal seeds give equal sequences. 0 is
+     taken as 1, because the generator's state must not be zero. */
+typedef double JSWallClockFunc(void *opaque);
+JS_EXTERN void JS_SetWallClockFunc(JSRuntime *rt, JSWallClockFunc *func, void *opaque);
+JS_EXTERN void JS_SetRandomSeed(JSContext *ctx, uint64_t seed);
 JS_EXTERN JSValue JS_GetFunctionProto(JSContext *ctx);
 
 /* the following functions are used to select the intrinsic object to
