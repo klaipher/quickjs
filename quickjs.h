@@ -542,6 +542,16 @@ JS_EXTERN void JS_SetContextOpaque(JSContext *ctx, void *opaque);
 JS_EXTERN JSRuntime *JS_GetRuntime(JSContext *ctx);
 JS_EXTERN void JS_SetClassProto(JSContext *ctx, JSClassID class_id, JSValue obj);
 JS_EXTERN JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id);
+
+/* Telegram fork change 4 (VENDOR.md): a host class's prototype made on first use. When JS_NewObjectClass or
+   JS_GetClassProto finds the prototype of a class registered after the built-ins still null in the context, the
+   runtime's function makes it (a new reference, JS_NULL, or JS_EXCEPTION). Unless the function set the slot itself
+   (JS_SetClassProto), the object it returns becomes the class's prototype in that context.
+   Contract: the function must not call JS_GetClassProto or JS_NewObjectClass for the class_id it was called for
+   (the slot is still null, so that re-enters the function without end). Asking for another class's prototype, such
+   as the parent's, is the intended pattern. */
+typedef JSValue JSClassProtoInitFunc(JSContext *ctx, JSClassID class_id);
+JS_EXTERN void JS_SetClassProtoInitFunc(JSRuntime *rt, JSClassProtoInitFunc *func);
 JS_EXTERN JSValue JS_GetFunctionProto(JSContext *ctx);
 
 /* the following functions are used to select the intrinsic object to

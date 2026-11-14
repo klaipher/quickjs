@@ -423,6 +423,7 @@ struct JSRuntime {
 
     JSInterruptHandler *interrupt_handler;
     JSHostAutoInitFunc *host_autoinit_func; /* Telegram fork change 3 */
+    JSClassProtoInitFunc *class_proto_init_func; /* Telegram fork change 4 */
     void *interrupt_opaque;
 
     JSPromiseHook *promise_hook;
@@ -3197,10 +3198,35 @@ void JS_SetClassProto(JSContext *ctx, JSClassID class_id, JSValue obj)
     set_value(ctx, &ctx->class_proto[class_id], obj);
 }
 
-JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id)
+/* Telegram fork change 4: the class's prototype, made on first use for host classes. Borrowed, or JS_EXCEPTION. */
+static JSValue js_class_proto(JSContext *ctx, JSClassID class_id)
 {
     assert(class_id < ctx->rt->class_count);
-    return js_dup(ctx->class_proto[class_id]);
+    JSValue proto = ctx->class_proto[class_id];
+    if (JS_IsNull(proto) && class_id >= JS_CLASS_INIT_COUNT && ctx->rt->class_proto_init_func) {
+        JSValue made = ctx->rt->class_proto_init_func(ctx, class_id);
+        if (JS_IsException(made))
+            return JS_EXCEPTION;
+        if (JS_IsObject(made) && JS_IsNull(ctx->class_proto[class_id]))
+            ctx->class_proto[class_id] = made;
+        else
+            JS_FreeValue(ctx, made);
+        proto = ctx->class_proto[class_id];
+    }
+    return proto;
+}
+
+void JS_SetClassProtoInitFunc(JSRuntime *rt, JSClassProtoInitFunc *func)
+{
+    rt->class_proto_init_func = func;
+}
+
+JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id)
+{
+    JSValue proto = js_class_proto(ctx, class_id);
+    if (JS_IsException(proto))
+        return JS_EXCEPTION;
+    return js_dup(proto);
 }
 
 JSValue JS_GetFunctionProto(JSContext *ctx)
@@ -6656,7 +6682,10 @@ static int JS_SetObjectData(JSContext *ctx, JSValueConst obj, JSValue val)
 
 JSValue JS_NewObjectClass(JSContext *ctx, JSClassID class_id)
 {
-    return JS_NewObjectProtoClass(ctx, ctx->class_proto[class_id], class_id);
+    JSValue proto = js_class_proto(ctx, class_id); /* Telegram fork change 4 */
+    if (JS_IsException(proto))
+        return JS_EXCEPTION;
+    return JS_NewObjectProtoClass(ctx, proto, class_id);
 }
 
 JSValue JS_NewObjectProto(JSContext *ctx, JSValueConst proto)
