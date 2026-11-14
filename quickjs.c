@@ -427,6 +427,8 @@ struct JSRuntime {
     JSClassID global_object_class_id; /* Telegram fork change 6: 0 for a plain global object */
     JSWallClockFunc *wall_clock_func; /* Telegram fork change 7: NULL for the system clock */
     void *wall_clock_opaque;
+    JSMemoryLimitFunc *memory_limit_func; /* Telegram fork change 9: NULL for none */
+    void *memory_limit_opaque;
     void *interrupt_opaque;
 
     JSPromiseHook *promise_hook;
@@ -2232,6 +2234,29 @@ static void js_arena_free_all(JSRuntime *rt)
 #endif
 }
 
+/* Telegram fork change 9 (VENDOR.md): makes every context's next poll call the interrupt handler, at once
+   rather than up to JS_INTERRUPT_COUNTER_INIT polls later, so a stop latched outside a poll (at the memory limit) lands at the
+   next poll site. */
+static void js_request_poll(JSRuntime *rt)
+{
+    struct list_head *el;
+    list_for_each(el, &rt->context_list) {
+        JSContext *ctx = list_entry(el, JSContext, link);
+        if (ctx->interrupt_counter > 1)
+            ctx->interrupt_counter = 1;
+    }
+}
+
+/* Telegram fork change 9 (VENDOR.md): an allocation refused at the memory limit. The host's hook, and every
+   context's next poll asks the interrupt handler at once (the stop the hook latched lands there). */
+static void js_memory_limit_refused(JSRuntime *rt)
+{
+    if (rt->memory_limit_func) {
+        rt->memory_limit_func(rt, rt->memory_limit_opaque);
+        js_request_poll(rt);
+    }
+}
+
 void *js_calloc_rt(JSRuntime *rt, size_t count, size_t size)
 {
     void *ptr;
@@ -2246,8 +2271,10 @@ void *js_calloc_rt(JSRuntime *rt, size_t count, size_t size)
 
     s = &rt->malloc_state;
     /* When malloc_limit is 0 (unlimited), malloc_limit - 1 will be SIZE_MAX. */
-    if (unlikely(s->malloc_size + (count * size) > s->malloc_limit - 1))
+    if (unlikely(s->malloc_size + (count * size) > s->malloc_limit - 1)) {
+        js_memory_limit_refused(rt); /* Telegram fork change 9 (VENDOR.md) */
         return NULL;
+    }
 
     ptr = js_arena_calloc(rt, count, size);
     if (!ptr)
@@ -2269,8 +2296,10 @@ void *js_malloc_rt(JSRuntime *rt, size_t size)
 
     s = &rt->malloc_state;
     /* When malloc_limit is 0 (unlimited), malloc_limit - 1 will be SIZE_MAX. */
-    if (unlikely(s->malloc_size + size > s->malloc_limit - 1))
+    if (unlikely(s->malloc_size + size > s->malloc_limit - 1)) {
+        js_memory_limit_refused(rt); /* Telegram fork change 9 (VENDOR.md) */
         return NULL;
+    }
 
     ptr = js_arena_malloc(rt, size);
     if (!ptr)
@@ -2316,8 +2345,10 @@ void *js_realloc_rt(JSRuntime *rt, void *ptr, size_t size)
     old_size = js_arena_usable_size(rt, ptr);
     s = &rt->malloc_state;
     /* When malloc_limit is 0 (unlimited), malloc_limit - 1 will be SIZE_MAX. */
-    if (s->malloc_size + size - old_size > s->malloc_limit - 1)
+    if (s->malloc_size + size - old_size > s->malloc_limit - 1) {
+        js_memory_limit_refused(rt); /* Telegram fork change 9 (VENDOR.md) */
         return NULL;
+    }
 
     ptr = js_arena_realloc(rt, ptr, size);
     if (!ptr)
@@ -3242,6 +3273,13 @@ void JS_SetWallClockFunc(JSRuntime *rt, JSWallClockFunc *func, void *opaque)
 void JS_SetRandomSeed(JSContext *ctx, uint64_t seed)
 {
     ctx->random_state = seed ? seed : 1;
+}
+
+/* Telegram fork change 9 (VENDOR.md). */
+void JS_SetMemoryLimitFunc(JSRuntime *rt, JSMemoryLimitFunc *func, void *opaque)
+{
+    rt->memory_limit_func = func;
+    rt->memory_limit_opaque = opaque;
 }
 
 JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id)

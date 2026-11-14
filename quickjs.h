@@ -569,6 +569,18 @@ JS_EXTERN void JS_SetGlobalObjectClass(JSRuntime *rt, JSClassID class_id);
 typedef double JSWallClockFunc(void *opaque);
 JS_EXTERN void JS_SetWallClockFunc(JSRuntime *rt, JSWallClockFunc *func, void *opaque);
 JS_EXTERN void JS_SetRandomSeed(JSContext *ctx, uint64_t seed);
+
+/* Telegram fork change 9 (VENDOR.md): the host's hook for an allocation refused at the memory limit. js_malloc_rt,
+   js_calloc_rt and js_realloc_rt, through which every counted allocation goes, call it each time they refuse one because
+   it would pass the JS_SetMemoryLimit limit, just before they return NULL. That includes a shrinking realloc while the
+   usage is already past the limit (the usage counts each block's usable size plus its overhead, so it can pass the
+   limit the check compares requests against). Other NULLs (the backing allocator's own, calloc's size overflow) do not
+   call it. After the hook, every context's next interrupt poll asks the handler at once, not up to
+   JS_INTERRUPT_COUNTER_INIT operations later.
+   Contract: it is called with no context, from the middle of any engine operation; it must not allocate, run JS, throw
+   or call into QuickJS. NULL, the default, removes it. */
+typedef void JSMemoryLimitFunc(JSRuntime *rt, void *opaque);
+JS_EXTERN void JS_SetMemoryLimitFunc(JSRuntime *rt, JSMemoryLimitFunc *func, void *opaque);
 JS_EXTERN JSValue JS_GetFunctionProto(JSContext *ctx);
 
 /* the following functions are used to select the intrinsic object to
